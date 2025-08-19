@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+.env
+.git
+.gitignore
+.vscode
+node_modules
+
