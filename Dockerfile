@@ -1,7 +1,9 @@
-	FROM python:3.11-slimFROM python:3.11-slimFROM python:3.11-slimFROM python:3.11-sli
-RUN apt-get update && \
+FROM python:3.11-slim
 
-o		
+RUN apt-get update && \
+    apt-get install -y postgresql postgresql-contrib && \
+    apt-get clean
+
 WORKDIR /app
 
 COPY requirements.txt .
