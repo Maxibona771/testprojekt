@@ -1,48 +1,42 @@
 from flask import Flask, request, redirect, url_for
-import psycopg2
-import time
+import sqlite3   # ✅ Вместо psycopg2 используем sqlite3
+import os
 
 importer = Flask(__name__)
 
-def connect_with_retry():
-    while True:
-        try:
-            conn = psycopg2.connect(
-                host="db",           # Имя хоста базы данных (docker-compose service)
-                database="postgres", # Имя базы данных
-                user="postgres",     # Пользователь базы данных
-                password="postgres"  # Пароль
-            )
-            return conn
-        except Exception as e:
-            print("❌ Ошибка подключения:", e)
-            time.sleep(1)
+DB_FILE = "database.db"  # ✅ SQLite хранит данные в файле
 
-# Маршрут для проверки версии PostgreSQL
-@importer.route("/version")
-def version():
-    conn = connect_with_retry()
+# Функция подключения (здесь проще, чем в PostgreSQL)
+def get_connection():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row  # ✅ Чтобы удобно работать с колонками по имени
+    return conn
+
+# Создаём таблицу, если её ещё нет
+def init_db():
+    conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT version();")
-    result = cur.fetchone()
-    cur.close()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            email TEXT NOT NULL
+        );
+    """)
+    conn.commit()
     conn.close()
-    return f"PostgreSQL версия: {result[0]}"
 
-# Маршрут для получения списка пользователей (GET-запрос)
+# Маршрут для получения списка пользователей
 @importer.route("/users", methods=["GET"])
 def get_users():
-    conn = connect_with_retry()
+    conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT id, username, email FROM users;")
     rows = cur.fetchall()
-    cur.close()
     conn.close()
 
-    # Возвращаем в виде простого текста с переносами строк
-    users_list = "<br>".join([f"{row[0]} | {row[1]} | {row[2]}" for row in rows])
-    
-    # Добавляем простую HTML форму для добавления пользователя (будет отображаться на странице)
+    users_list = "<br>".join([f"{row['id']} | {row['username']} | {row['email']}" for row in rows])
+
     form_html = """
     <hr>
     <h3>Добавить пользователя</h3>
@@ -54,7 +48,7 @@ def get_users():
     """
     return users_list + form_html
 
-# Маршрут для добавления пользователя (POST-запрос)
+# Маршрут для добавления пользователя
 @importer.route("/users", methods=["POST"])
 def add_user():
     username = request.form.get("username")
@@ -63,18 +57,15 @@ def add_user():
     if not username or not email:
         return "Ошибка: не заполнены обязательные поля", 400
 
-    conn = connect_with_retry()
+    conn = get_connection()
     cur = conn.cursor()
-    # Вставляем нового пользователя в таблицу
-    cur.execute("INSERT INTO users (username, email) VALUES (%s, %s);", (username, email))
+    cur.execute("INSERT INTO users (username, email) VALUES (?, ?);", (username, email))
     conn.commit()
-    cur.close()
     conn.close()
 
-    # После добавления делаем редирект обратно на GET /users чтобы увидеть обновленный список
     return redirect(url_for('get_users'))
 
 # Запуск сервера Flask
 if __name__ == '__main__':
-    # host=0.0.0.0 чтобы сервер был доступен извне контейнера
+    init_db()  # ✅ Инициализация базы при старте
     importer.run(host='0.0.0.0', port=5000)
